@@ -55,7 +55,7 @@ router.post('/', upload.single('resume'), async (req, res) => {
     const skills = extractSkills(rawText);
     const db = req.app.locals.db;
     const result = await db.query(
-      'INSERT INTO resumes (filename, raw_text, skills) VALUES ($1, $2, $3) RETURNING id, filename, skills, created_at',
+      'INSERT INTO resumes (filename, raw_text, skills) VALUES ($1, $2, $3) RETURNING id, filename, raw_text, skills, created_at',
       [filename, rawText, JSON.stringify(skills)]
     );
 
