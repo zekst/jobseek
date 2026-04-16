@@ -3,6 +3,9 @@ const { runAutoApply } = require('../services/autoApplyService');
 
 const router = express.Router();
 
+// In-memory running state
+let isRunning = false;
+
 // GET /api/autoapply/config
 router.get('/config', async (req, res) => {
   try {
@@ -41,12 +44,37 @@ router.put('/config', async (req, res) => {
   }
 });
 
-// POST /api/autoapply/run — manually trigger an auto-apply session
-router.post('/run', async (req, res) => {
+// POST /api/autoapply/start
+router.post('/start', async (req, res) => {
   try {
     const db = req.app.locals.db;
-    res.json({ message: 'Auto-apply session started' });
-    runAutoApply(db).catch(err => console.error('[AutoApply] Manual run error:', err.message));
+    await db.query('UPDATE autoapply_config SET enabled = true WHERE id = 1');
+    isRunning = true;
+    res.json({ running: true, message: 'Auto-apply started. Cron runs at 8am, 2pm, 8pm.' });
+    runAutoApply(db).catch(err => console.error('[AutoApply] Start error:', err.message));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/autoapply/pause
+router.post('/pause', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    await db.query('UPDATE autoapply_config SET enabled = false WHERE id = 1');
+    isRunning = false;
+    res.json({ running: false, message: 'Auto-apply paused.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/autoapply/status
+router.get('/status', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const config = await db.query('SELECT enabled FROM autoapply_config WHERE id = 1');
+    res.json({ running: config.rows[0]?.enabled || false });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

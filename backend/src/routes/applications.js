@@ -2,7 +2,20 @@ const express = require('express');
 
 const router = express.Router();
 
-// GET /api/applications — list all applications
+// GET /api/applications/stats — must be before /:id
+router.get('/stats', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const result = await db.query('SELECT status, COUNT(*) as count FROM applications GROUP BY status');
+    const stats = {};
+    result.rows.forEach(r => { stats[r.status] = parseInt(r.count); });
+    res.json(stats);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/applications
 router.get('/', async (req, res) => {
   try {
     const db = req.app.locals.db;
@@ -20,6 +33,21 @@ router.get('/', async (req, res) => {
   }
 });
 
+// POST /api/applications
+router.post('/', async (req, res) => {
+  try {
+    const db = req.app.locals.db;
+    const { job_id, job_title, company, location, job_url, status = 'applied', match_score = 0, notes } = req.body;
+    const result = await db.query(
+      'INSERT INTO applications (job_id, job_title, company, location, job_url, status, match_score, notes) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+      [job_id, job_title, company, location, job_url, status, match_score, notes]
+    );
+    res.status(201).json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // GET /api/applications/:id
 router.get('/:id', async (req, res) => {
   try {
@@ -32,8 +60,8 @@ router.get('/:id', async (req, res) => {
   }
 });
 
-// PATCH /api/applications/:id — update status or notes
-router.patch('/:id', async (req, res) => {
+// PUT /api/applications/:id
+router.put('/:id', async (req, res) => {
   try {
     const db = req.app.locals.db;
     const { status, notes } = req.body;
