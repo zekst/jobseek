@@ -3,10 +3,49 @@
 import { useState, useRef } from 'react';
 import { api } from '@/lib/api';
 
+// Read file text in the browser — PDF via pdf.js CDN, TXT via FileReader
+async function extractTextFromFile(file) {
+  const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+
+  if (isPDF) {
+    // Load pdf.js from CDN dynamically
+    if (!window.pdfjsLib) {
+      await new Promise((resolve, reject) => {
+        const script = document.createElement('script');
+        script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+        script.onload = resolve;
+        script.onerror = reject;
+        document.head.appendChild(script);
+      });
+      window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+    }
+
+    const buffer = await file.arrayBuffer();
+    const pdf = await window.pdfjsLib.getDocument({ data: buffer }).promise;
+    let text = '';
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      text += content.items.map(item => item.str).join(' ') + '\n';
+    }
+    return text;
+  } else {
+    // Plain text
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = e => resolve(e.target.result);
+      reader.onerror = reject;
+      reader.readAsText(file);
+    });
+  }
+}
+
 export default function ResumePanel({ onSkillsLoaded, onResumeLoaded }) {
   const [dragging, setDragging] = useState(false);
   const [resume, setResume] = useState(null);
   const [loading, setLoading] = useState(false);
+  const [loadingMsg, setLoadingMsg] = useState('');
   const [error, setError] = useState('');
   const inputRef = useRef();
 
@@ -15,16 +54,26 @@ export default function ResumePanel({ onSkillsLoaded, onResumeLoaded }) {
     setLoading(true);
     setError('');
     try {
-      const formData = new FormData();
-      formData.append('resume', file);
-      const data = await api.resume.upload(formData);
+      // Step 1: extract text in the browser
+      setLoadingMsg('Reading file...');
+      const text = await extractTextFromFile(file);
+
+      if (!text || text.trim().length < 20) {
+        throw new Error('Could not extract text. Try a .txt version of your resume.');
+      }
+
+      // Step 2: send text as JSON to backend
+      setLoadingMsg('Analysing skills...');
+      const data = await api.resume.uploadText(text, file.name);
+
       setResume(data);
       onSkillsLoaded(data.skills || []);
-      onResumeLoaded(data.raw_text || '');
+      onResumeLoaded(data.raw_text || text);
     } catch (e) {
-      setError('Upload failed. Make sure the backend is running.');
+      setError(e.message || 'Upload failed. Make sure the backend is running.');
     }
     setLoading(false);
+    setLoadingMsg('');
   }
 
   function onDrop(e) {
@@ -38,7 +87,6 @@ export default function ResumePanel({ onSkillsLoaded, onResumeLoaded }) {
       <h1 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8 }}>Resume</h1>
       <p style={{ color: '#64748b', marginBottom: 24 }}>Upload your resume to enable AI matching and auto-apply</p>
 
-      {/* Drop zone */}
       <div
         onDragOver={e => { e.preventDefault(); setDragging(true); }}
         onDragLeave={() => setDragging(false)}
@@ -57,12 +105,16 @@ export default function ResumePanel({ onSkillsLoaded, onResumeLoaded }) {
           onChange={e => handleFile(e.target.files[0])} />
       </div>
 
-      {loading && <div style={{ textAlign: 'center', color: '#6366f1', marginBottom: 16 }}>Parsing resume...</div>}
-      {error && <div style={{ color: '#f87171', marginBottom: 16 }}>{error}</div>}
+      {loading && (
+        <div style={{ textAlign: 'center', color: '#6366f1', marginBottom: 16 }}>
+          ⏳ {loadingMsg}
+        </div>
+      )}
+      {error && <div style={{ color: '#f87171', marginBottom: 16 }}>⚠️ {error}</div>}
 
       {resume && (
         <div style={{ background: '#1e293b', borderRadius: 12, padding: 24, border: '1px solid #334155' }}>
-          <div style={{ fontWeight: 600, marginBottom: 16, color: '#a5b4fc' }}>✅ Resume Loaded</div>
+          <div style={{ fontWeight: 600, marginBottom: 16, color: '#a5b4fc' }}>✅ Resume Loaded — {resume.filename}</div>
           <div style={{ marginBottom: 12 }}>
             <div style={{ fontSize: 12, color: '#64748b', marginBottom: 8 }}>DETECTED SKILLS ({resume.skills?.length || 0})</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>

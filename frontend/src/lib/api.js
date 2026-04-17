@@ -15,7 +15,11 @@ export const api = {
     score: (jobKeywords, userSkills) => request('/api/jobs/score', { method: 'POST', body: JSON.stringify({ jobKeywords, userSkills }) }),
   },
   resume: {
-    upload: (formData) => fetch(`${BASE_URL}/api/resume`, { method: 'POST', body: formData }).then(r => { if (!r.ok) throw new Error('Upload failed'); return r.json(); }),
+    // Send extracted text as JSON — avoids multer/multipart issues
+    uploadText: (text, filename) => request('/api/resume', {
+      method: 'POST',
+      body: JSON.stringify({ text, filename }),
+    }),
     getLatest: () => request('/api/resume'),
     tailor: (resumeText, jobDescription, jobTitle, company) =>
       request('/api/resume/tailor', { method: 'POST', body: JSON.stringify({ resumeText, jobDescription, jobTitle, company }) }),
